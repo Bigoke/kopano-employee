@@ -35,6 +35,23 @@
     lastLogin: store.get('lastLogin', ''),
   };
 
+  // ---------- 1.53: display settings (text size, light / dark) ----------
+  var TEXT_SIZES = [['auto', 'tsAuto'], ['14', 'tsSmall'], ['16', 'tsNormal'], ['18', 'tsLarge'], ['20', 'tsXLarge'], ['23', 'tsHuge']];
+  var THEMES = [['system', 'themeSystem'], ['light', 'themeLight'], ['dark', 'themeDark']];
+  function textSizePref() { var v = String(store.get('textSize', 'auto')); return TEXT_SIZES.some(function (x) { return x[0] === v; }) ? v : 'auto'; }
+  function themePref() { var v = store.get('theme', 'system'); return v === 'light' || v === 'dark' ? v : 'system'; }
+  function applyDisplay() {
+    var root = document.documentElement, ts = textSizePref(), th = themePref();
+    root.classList.toggle('ts-auto', ts === 'auto');
+    root.style.fontSize = ts === 'auto' ? '' : ts + 'px';
+    if (th === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', th);
+    var dark = th === 'dark' || (th === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', dark ? '#14171a' : '#1f6f6b');
+  }
+  applyDisplay();
+  if (window.matchMedia) { var mq = window.matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', applyDisplay); }
+
   // ---------- text ----------
   function lang() {
     if (state.lang === 'en' || state.lang === 'af') return state.lang;
@@ -239,6 +256,7 @@
       state.homeAt = new Date().toISOString();
       store.set('home', state.home);
       store.set('homeAt', state.homeAt);
+      keepBrand();
       state.offline = false;
       scheduleNotifications();
       checkNews();
@@ -450,21 +468,22 @@
     var sub = view.back
       ? '<button type="button" class="icon-btn" data-act="back" aria-label="' + h(t('back')) + '">' + icon('back') + '</button>'
       : '';
-    var top = '<header class="top">' + sub + '<div class="title"><b>' + h(view.title) + '</b><span id="subtitle">' + h(subtitle(emp)) + '</span></div>' +
+    var b = brand();
+    var top = '<header class="top">' + sub + coLogoHtml(b) + '<div class="title"><b class="co-name">' + h(b.name || t('appName')) + '</b><span class="view" id="subtitle">' + h(subtitle(view)) + '</span></div>' +
       '<button type="button" class="icon-btn' + (state.loading ? ' spin' : '') + '" id="refreshBtn" data-act="refresh" aria-label="' + h(t('refresh')) + '">' + icon('refresh') + '</button></header>';
     var banner = '';
     if (state.offline) banner = '<div class="banner warn">' + h(t('offline', { when: state.homeAt ? fmtStamp(state.homeAt) : '—' })) + '</div>';
     else if (state.home && !home.employee && !state.loading) banner = '<div class="banner info">' + h(t('notPublished')) + '</div>';
     return top + '<main>' + flashHtml() + banner + view.html + '</main>' + tabs;
   }
-  function subtitle(emp) {
+  function subtitle(view) {
     if (state.loading) return t('loading');
-    return (emp.company || (state.conn && state.conn.n) || '');
+    return (view && view.title) || '';
   }
   function updateTopBar() {
     var b = document.getElementById('refreshBtn'), s = document.getElementById('subtitle');
     if (b) b.classList.toggle('spin', !!state.loading);
-    if (s) s.textContent = subtitle((state.home && state.home.employee) || {});
+    if (s) s.textContent = subtitle(currentView);
   }
 
   function render() {
@@ -500,7 +519,7 @@
   var connectMode = 'start';
   function viewConnect() {
     var html = '<div class="welcome"><div class="lang">' + langToggle() + '</div>' +
-      '<div class="logo">K</div><h1>' + h(t('welcomeTitle')) + '</h1><p class="mute">' + h(t('welcomeText')) + '</p>' + flashHtml();
+      '<div class="logo app"><img src="kopano-icon.svg" alt="Kopano"></div><h1>' + h(t('welcomeTitle')) + '</h1><p class="mute">' + h(t('welcomeText')) + '</p>' + flashHtml();
     if (connectMode === 'paste') {
       html += '<form id="connectForm" novalidate><div class="field" style="margin-top:18px"><label for="code">' + h(t('connectionCode')) + '</label>' +
         '<textarea id="code" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="KPE1.…"></textarea>' +
@@ -572,7 +591,7 @@
   var signMode = store.get('activated', false) ? 'login' : 'first';
   function viewSignIn() {
     var first = signMode === 'first';
-    var html = '<div class="welcome"><div class="lang">' + langToggle() + '</div><div class="logo">K</div>' +
+    var html = '<div class="welcome"><div class="lang">' + langToggle() + '</div>' + coLogoHtml(brand()) +
       '<h1>' + h(t('signInTo', { company: state.conn.n || t('company') })) + '</h1>' + flashHtml() +
       '<div class="seg" style="margin-top:14px"><button type="button" data-act="signmode" data-v="first" class="' + (first ? 'on' : '') + '">' + h(t('firstTime')) + '</button>' +
       '<button type="button" data-act="signmode" data-v="login" class="' + (first ? '' : 'on') + '">' + h(t('signIn')) + '</button></div>' +
@@ -1254,6 +1273,25 @@
     if (!rows.length) return '<p class="mute small">—</p>';
     return '<dl class="kv">' + rows.map(function (r) { return '<dt>' + h(t(r[0])) + '</dt><dd>' + (r[2] ? r[1] : h(r[1])) + '</dd>'; }).join('') + '</dl>';
   }
+  // 1.53: the company the employee works for: its trading name (or the company), and its logo from Kopano Payroll
+  function brand() {
+    var emp = (state.home && state.home.employee) || {}, kept = store.get('brand', null) || {};
+    var same = kept.u && state.conn && kept.u === state.conn.u;
+    var name = emp.tradingAs || emp.entity || emp.company || (same && kept.name) || (state.conn && state.conn.n) || '';
+    var logo = String(emp.logo || (same && !state.home ? kept.logo : '') || '');
+    return { name: name, logo: /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(logo) ? logo : '' };
+  }
+  function keepBrand() {
+    var emp = (state.home && state.home.employee) || {};
+    if (state.conn && (emp.entity || emp.company)) store.set('brand', { u: state.conn.u, name: emp.tradingAs || emp.entity || emp.company, logo: String(emp.logo || '') });
+  }
+  function coLogoHtml(b, label) {
+    if (b.logo) return '<span class="co-logo"><img alt="' + h(label || b.name) + '" src="' + b.logo + '"></span>';
+    return '<span class="co-logo none" aria-hidden="true">' + h(initials(String(b.name || '').replace(/\b(pty|ltd|cc|inc|t\/a|\(pty\))\b\.?/gi, ''))) + '</span>';
+  }
+  function byKopano() {
+    return '<p class="tiny mute by-kopano"><img src="kopano-icon.svg" alt="">' + h(t('byKopano')) + '</p>';
+  }
   function initials(name) {
     return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w.charAt(0); }).join('').toUpperCase() || '?';
   }
@@ -1274,7 +1312,7 @@
     var entity = emp.entity || emp.company || '';
     var html = '<div class="card"><div class="me-head">' +
       (canPhoto ? '<button type="button" class="avbtn" data-act="go" data-v="me/photo" aria-label="' + h(t(emp.photo ? 'changePhoto' : 'addPhoto')) + '">' + avatarHtml(emp) + '<span class="avedit">' + icon('camera') + '</span></button>' : avatarHtml(emp)) +
-      '<div class="grow"><h1 style="font-size:20px;margin:0">' + h(name) + '</h1>' + (emp.position ? '<div class="mute">' + h(emp.position) + '</div>' : '') +
+      '<div class="grow"><h1 style="font-size:1.25rem;margin:0">' + h(name) + '</h1>' + (emp.position ? '<div class="mute">' + h(emp.position) + '</div>' : '') +
       (canPhoto ? '<button type="button" class="linkbtn" data-act="go" data-v="me/photo">' + h(t(photoWait ? 'photoPending' : emp.photo ? 'changePhoto' : 'addPhoto')) + '</button>' : '') + '</div></div>' +
       kv([['position', emp.position], ['department', emp.department], ['employeeNo', emp.number], ['entity', entity],
         ['tradingAs', emp.tradingAs && emp.tradingAs !== entity ? emp.tradingAs : ''], ['subDivision', emp.subDivision || ''], ['group', (emp.groups || []).join(', ')],
@@ -1294,6 +1332,7 @@
     if (ed.some(function (k) { return FORM_FIELDS.indexOf(k) >= 0; })) html += '<button type="button" class="btn primary block" data-act="go" data-v="me/edit">' + h(t('requestChange')) + '</button>';
     html += '<p class="small mute" style="margin-top:10px">' + h(t('notEditable')) + '</p>';
 
+    html += companyCard();
     html += settingsHtml();
     return { title: t('profileTitle'), html: html };
   }
@@ -1374,15 +1413,25 @@
   }
   function viewMgrProfile() {
     var emp = (state.home || {}).employee || {};
-    var html = '<div class="card"><h1 style="font-size:20px">' + h(emp.name || (state.session && state.session.name) || '') + '</h1>' +
+    var html = '<div class="card"><h1 style="font-size:1.25rem">' + h(emp.name || (state.session && state.session.name) || '') + '</h1>' +
       kv([['position', t('managerRole')], ['company', emp.company]]) + '<p class="small mute" style="margin-top:8px">' + h(t('managerOnlyInfo')) + '</p></div>';
-    return { title: t('profileTitle'), html: html + settingsHtml() };
+    return { title: t('profileTitle'), html: html + companyCard() + settingsHtml() };
+  }
+  function companyCard() {
+    var emp = (state.home && state.home.employee) || {}, b = brand(), entity = emp.entity || emp.company || '';
+    return '<h2>' + h(t('yourCompany')) + '</h2><div class="card co-card">' + coLogoHtml(b) + '<div class="grow"><b>' + h(b.name) + '</b>' +
+      (entity && entity !== b.name ? '<div class="small mute">' + h(entity) + '</div>' : '') + '</div></div>';
   }
   function settingsHtml() {
     var html = '';
     var notifyOn = store.get('notify', true) !== false;
     html += '<h2>' + h(t('settings')) + '</h2><div class="list">' +
       '<div class="row"><div class="grow"><b>' + h(t('language')) + '</b></div>' + langToggle() + '</div>' +
+      '<div class="row"><div class="grow"><label for="tsSel"><b>' + h(t('textSize')) + '</b></label><div class="small mute">' + h(t('textSizeHint')) + '</div>' +
+      '<div class="ts-row"><select id="tsSel" data-act="text-size">' + TEXT_SIZES.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === textSizePref() ? ' selected' : '') + '>' + h(t(x[1])) + '</option>'; }).join('') + '</select>' +
+      '<span class="ts-sample" aria-hidden="true">Aa</span></div></div></div>' +
+      '<div class="row"><div class="grow"><b>' + h(t('appearance')) + '</b><div class="seg small" role="group" aria-label="' + h(t('appearance')) + '">' +
+      THEMES.map(function (x) { return '<button type="button" data-act="theme" data-v="' + x[0] + '" class="' + (themePref() === x[0] ? 'on' : '') + '" aria-pressed="' + (themePref() === x[0]) + '">' + h(t(x[1])) + '</button>'; }).join('') + '</div></div></div>' +
       (NATIVE ? '<label class="row"><div class="grow"><b>' + h(t('notifications')) + '</b><div class="small mute">' + h(t('notificationsHint')) + '</div></div><input type="checkbox" data-act="notify" style="width:22px;height:22px;accent-color:var(--accent)"' + (notifyOn ? ' checked' : '') + '></label>' : '') +
       '<div class="row"><div class="grow"><label for="sndSel"><b>' + h(t('sound')) + '</b></label><div class="small mute">' + h(t('soundHint')) + '</div>' +
       '<select id="sndSel" data-act="sound" style="margin-top:8px">' + SOUNDS.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === soundPref() ? ' selected' : '') + '>' + h(t(x[1])) + '</option>'; }).join('') + '</select></div>' +
@@ -1391,7 +1440,7 @@
       (NATIVE ? '' : '<div class="row"><div class="grow small mute">' + h(t('webNoNotify')) + '</div></div>') +
       '<button type="button" class="row" data-act="go" data-v="me/password"><div class="grow"><b>' + h(t('changePassword')) + '</b></div>' + icon('chev', 'chev') + '</button>' +
       '<button type="button" class="row" data-act="sign-out"><div class="grow"><b style="color:var(--bad)">' + h(t('signOut')) + '</b><div class="small mute">' + h(state.conn.n || '') + (state.session ? ' · ' + h(state.session.login || '') : '') + '</div></div></button></div>' +
-      '<p class="tiny mute" style="text-align:center">' + h(t('appVersion', { v: VERSION })) + '</p>';
+      byKopano() + '<p class="tiny mute" style="text-align:center;margin-top:2px">' + h(t('appVersion', { v: VERSION })) + '</p>';
     return html;
   }
   function input(name, labelKey, value, type, extra) {
@@ -1859,6 +1908,7 @@
         render();
         break;
       case 'tab': go(v); break;
+      case 'theme': store.set('theme', v); applyDisplay(); render(); break;
       case 'go': ev.preventDefault(); go(v); break;
       case 'apply-type': {
         var lts = (state.home && state.home.leaveTypes) || [];
@@ -1911,6 +1961,7 @@
     }
   });
   document.addEventListener('change', function (ev) {
+    if (ev.target.matches('[data-act="text-size"]')) { store.set('textSize', ev.target.value); applyDisplay(); }
     if (ev.target.matches('[data-act="sound"]')) { store.set('sound', ev.target.value); pushAlertPrefs(); alertNow(true); }
     if (ev.target.matches('[data-act="vibrate"]')) { store.set('vibrate', ev.target.checked); pushAlertPrefs(); if (ev.target.checked) alertNow(true); }
     if (ev.target.matches('[data-act="notify"]')) {
@@ -1927,5 +1978,5 @@
   if (!NATIVE) document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') window.kpResume(); });
   render();
   if (state.session) loadHome(!!state.home);
-  window.kpApp = { state: state, parseConnectionCode: parseConnectionCode, money: money, render: render, calEvent: calEvent, lastAlert: function () { return lastAlert; }, validTaxNo: validTaxNo, ios: IOS }; // for tests
+  window.kpApp = { state: state, parseConnectionCode: parseConnectionCode, money: money, render: render, calEvent: calEvent, lastAlert: function () { return lastAlert; }, validTaxNo: validTaxNo, ios: IOS, brand: brand, applyDisplay: applyDisplay }; // for tests
 })();

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Kopano Payroll (1.53): an employee ID badge with a paid tick, on the Kopano teal -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b8f88"/><stop offset="1" stop-color="#17534f"/></linearGradient>
+    <linearGradient id="coin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffcf5a"/><stop offset="1" stop-color="#f0a417"/></linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bg)"/>
+  <!-- lanyard strap and clip -->
+  <path d="M206 16 L256 128 L306 16" fill="none" stroke="#0f3f3c" stroke-opacity=".45" stroke-width="22" stroke-linejoin="round"/>
+  <rect x="216" y="104" width="80" height="54" rx="14" fill="#d9e7e6"/>
+  <!-- the badge -->
+  <rect x="88" y="136" width="336" height="268" rx="38" fill="#fff"/>
+  <rect x="226" y="152" width="60" height="14" rx="7" fill="#c7d6d5"/>
+  <!-- the person -->
+  <circle cx="178" cy="238" r="36" fill="#1f6f6b"/>
+  <path d="M112 352c0-46 29.5-74 66-74s66 28 66 74z" fill="#1f6f6b"/>
+  <!-- details -->
+  <rect x="266" y="214" width="122" height="22" rx="11" fill="#1f6f6b"/>
+  <rect x="266" y="256" width="96" height="18" rx="9" fill="#a9c9c6"/>
+  <rect x="266" y="292" width="72" height="18" rx="9" fill="#a9c9c6"/>
+  <!-- paid tick -->
+  <circle cx="392" cy="384" r="74" fill="#17534f"/>
+  <circle cx="392" cy="384" r="62" fill="url(#coin)"/>
+  <path d="M362 386l20 20 38-42" fill="none" stroke="#5a3b00" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
