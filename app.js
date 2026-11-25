@@ -1440,7 +1440,7 @@
   function viewMgrProfile() {
     var emp = (state.home || {}).employee || {};
     var html = '<div class="card"><h1 style="font-size:1.25rem">' + h(emp.name || (state.session && state.session.name) || '') + '</h1>' +
-      kv([['position', t('managerRole')], ['company', emp.company]]) + '<p class="small mute" style="margin-top:8px">' + h(t('managerOnlyInfo')) + '</p></div>';
+      kv([['position', t('managerRole')], ['company', emp.company]]) + '<p class="small mute" style="margin-top:8px">' + h(t('managerOnlyInfo')) + '</p><p class="small mute" style="margin-top:6px">' + h(t('managerLinkHint')) + '</p></div>';
     return { title: t('profileTitle'), html: html + companyCard() + settingsHtml() };
   }
   function companyCard() {
