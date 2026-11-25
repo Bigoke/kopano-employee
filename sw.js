@@ -1,7 +1,7 @@
 /* Kopano Employee web app: keeps the app's own files so it opens without a connection. Calls to Supabase are never
    cached (they go straight to the company's project). The cache name changes with every build, so an update is
    picked up the next time the app is opened. */
-var CACHE = 'kopano-employee-1.54.1-996cd1463c';
+var CACHE = 'kopano-employee-1.55.0-d2cc14e9b5';
 var FILES = ["./", "app.js", "apple-touch-icon.png", "favicon.png", "holidays.js", "i18n.js", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "index.html", "kopano-icon.svg", "manifest.webmanifest", "pwa.js", "style.css", "vendor/jsQR.js", "web.css"];
 self.addEventListener('install', function (ev) {
   ev.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));
