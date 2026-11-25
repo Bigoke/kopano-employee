@@ -267,10 +267,11 @@
     store.set('home', null);
     store.set('homeAt', null);
     if (NATIVE && NATIVE.setReminders) NATIVE.setReminders('[]');
+    liveSync();
   }
 
   // ---------- loading the employee's details ----------
-  var loadingPromise = null;
+  var loadingPromise = null, loadAgain = false;
   function loadHome(quiet) {
     if (!state.session) return Promise.resolve();
     if (loadingPromise) return loadingPromise;
@@ -293,9 +294,42 @@
       loadingPromise = null;
       if (!currentView || !currentView.form) render();
       else updateTopBar();
+      liveSync();
+      if (loadAgain) { loadAgain = false; setTimeout(function () { loadHome(true); }, 100); } // a change came in while loading
     });
     return loadingPromise;
   }
+
+  // ---------- 1.56: instant updates while the app is open ----------
+  // The server sends a short "something changed" signal on this login's own channel (home.live) over Supabase Realtime
+  // (live.js); the app then loads the details as usual. Only while the app is in front: when it goes to the background
+  // the line is closed, and it is opened again (with a refresh) when the app comes back. As a fall-back the app also
+  // refreshes every 10 minutes while open, or every 2 minutes when the live line is down.
+  var phoneLive = null, liveKey = '', livePingT = null, appInFront = true, liveWasDown = false;
+  function liveState() { return phoneLive ? phoneLive.state() : 'off'; }
+  function livePing() {
+    clearTimeout(livePingT);
+    livePingT = setTimeout(function () { if (loadingPromise) loadAgain = true; else loadHome(true); }, 500);
+  }
+  function liveSync() {
+    var h = state.home || {}, c = state.conn;
+    var want = appInFront && state.session && c && h.live && typeof window.KpLive === 'function';
+    if (!want) { if (phoneLive) { phoneLive.stop(); phoneLive = null; liveKey = ''; } return; }
+    var key = c.u + '|' + h.live;
+    if (phoneLive && liveKey === key) return;
+    if (phoneLive) phoneLive.stop();
+    liveKey = key; liveWasDown = false;
+    phoneLive = window.KpLive({ url: c.u, key: c.k, topic: h.live, onPing: livePing,
+      onState: function (s) {
+        if (s === 'down') liveWasDown = true;
+        if (s === 'live' && liveWasDown) { liveWasDown = false; livePing(); } // back after a break: fetch what was missed
+      } });
+  }
+  setInterval(function () {
+    if (!appInFront || !state.session || loadingPromise) return;
+    var age = state.homeAt ? Date.now() - Date.parse(state.homeAt) : Infinity;
+    if (age > (liveState() === 'live' ? 600000 : 120000)) loadHome(true);
+  }, 30000);
 
   // ---------- 1.46: notification sounds and vibration ----------
   var SOUNDS = [['default', 'soundDefault'], ['chime', 'soundChime'], ['ping', 'soundPing'], ['bell', 'soundBell'], ['none', 'soundNone']];
@@ -404,8 +438,12 @@
   window.addEventListener('hashchange', function () { render(); });
   window.kpOpen = function (r) { go(r || ''); };
   window.kpResume = function () {
-    if (state.session && (!state.homeAt || Date.now() - Date.parse(state.homeAt) > 120000)) loadHome(true);
+    appInFront = true;
+    // 1.56: the live line was closed while the app was in the background, so look for news at once
+    if (state.session && (!state.homeAt || Date.now() - Date.parse(state.homeAt) > 10000)) loadHome(true);
+    liveSync();
   };
+  window.kpPause = function () { appInFront = false; liveSync(); };
   window.kpBack = function () {
     var cam = document.querySelector('.camera');
     if (cam) { closeCamera(); return true; }
@@ -2001,8 +2039,8 @@
   pushAlertPrefs();
   codeFromLink();
   // 1.52: the web app has no Android shell to say it came back to the front: refresh like the phone app does
-  if (!NATIVE) document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') window.kpResume(); });
+  if (!NATIVE) document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') window.kpResume(); else window.kpPause(); });
   render();
   if (state.session) loadHome(!!state.home);
-  window.kpApp = { state: state, parseConnectionCode: parseConnectionCode, money: money, render: render, calEvent: calEvent, lastAlert: function () { return lastAlert; }, validTaxNo: validTaxNo, ios: IOS, brand: brand, applyDisplay: applyDisplay }; // for tests
+  window.kpApp = { state: state, parseConnectionCode: parseConnectionCode, money: money, render: render, calEvent: calEvent, lastAlert: function () { return lastAlert; }, liveState: liveState, validTaxNo: validTaxNo, ios: IOS, brand: brand, applyDisplay: applyDisplay }; // for tests
 })();
