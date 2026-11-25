@@ -164,8 +164,33 @@
     for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return new TextDecoder().decode(bytes);
   }
+  // 1.54.1: the short link ?j=<ref>.<iat>.<exp>.<signature>.<ws> holds a standard Supabase anon key in pieces
+  // (the key's header and payload are the same for every project apart from ref, iat and exp). Letters, digits and dots
+  // only, so WhatsApp shows the whole link as one link.
+  var B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  function b62Bytes(s, len) {
+    var out = [], i, j, v, carry;
+    for (i = 0; i < len; i++) out.push(0);
+    for (i = 0; i < s.length; i++) {
+      carry = B62.indexOf(s.charAt(i)); if (carry < 0) throw new Error('bad');
+      for (j = len - 1; j >= 0; j--) { v = out[j] * 62 + carry; out[j] = v & 255; carry = v >> 8; }
+      if (carry) throw new Error('too long');
+    }
+    return out;
+  }
+  function b64urlBytes(a) { var bin = ''; for (var i = 0; i < a.length; i++) bin += String.fromCharCode(a[i]); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  function parseShortCode(s) {
+    var j = String(s || '').match(/(?:[?&#]j=|KPJ\.)([a-z0-9]{20})\.([0-9a-z]{1,9})\.([0-9a-z]{1,9})\.([0-9A-Za-z]{43})\.([0-9a-f]{4,40})(?![0-9A-Za-z])/);
+    if (!j) return null;
+    try {
+      var payload = '{"iss":"supabase","ref":"' + j[1] + '","role":"anon","iat":' + parseInt(j[2], 36) + ',"exp":' + parseInt(j[3], 36) + '}';
+      var k = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + btoa(payload).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') + '.' + b64urlBytes(b62Bytes(j[4], 32));
+      return { u: 'https://' + j[1] + '.supabase.co', k: k, w: 'kp-' + j[5], n: '' };
+    } catch (e) { return null; }
+  }
   function parseConnectionCode(text) {
     var s = String(text || '').trim();
+    var sc = parseShortCode(s); if (sc) return sc;
     var m = s.match(/KPE1\.[A-Za-z0-9_-]+/); // also inside a link or a longer message
     if (!m) return null;
     try {
@@ -559,7 +584,8 @@
   // home-screen app has its own storage, so it connects again from it on its first start.
   function codeFromLink() {
     var q = String(location.search || ''), hs = String(location.hash || '');
-    var m = q.match(/KPE1\.[A-Za-z0-9_-]+/), inHash = false;
+    try { q = decodeURIComponent(q); } catch (e) { /* keep it */ } // 1.54.1: _ may come as %5F (WhatsApp)
+    var m = q.match(/[?&]j=[0-9A-Za-z.]+|KPE1\.[A-Za-z0-9_-]+/), inHash = false;
     if (!m) { m = hs.match(/KPE1\.[A-Za-z0-9_-]+/); inHash = !!m; }
     if (!m) return;
     if (inHash) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
@@ -592,7 +618,7 @@
   function viewSignIn() {
     var first = signMode === 'first';
     var html = '<div class="welcome"><div class="lang">' + langToggle() + '</div>' + coLogoHtml(brand()) +
-      '<h1>' + h(t('signInTo', { company: state.conn.n || t('company') })) + '</h1>' + flashHtml() +
+      '<h1>' + h(t('signInTo', { company: state.conn.n || brand().name || 'Kopano' })) + '</h1>' + flashHtml() +
       '<div class="seg" style="margin-top:14px"><button type="button" data-act="signmode" data-v="first" class="' + (first ? 'on' : '') + '">' + h(t('firstTime')) + '</button>' +
       '<button type="button" data-act="signmode" data-v="login" class="' + (first ? '' : 'on') + '">' + h(t('signIn')) + '</button></div>' +
       '<form id="signForm" novalidate>' +
@@ -1439,7 +1465,7 @@
       (CAN_VIBRATE ? '<label class="row"><div class="grow"><b>' + h(t('vibrate')) + '</b><div class="small mute">' + h(t('vibrateHint')) + '</div></div><input type="checkbox" data-act="vibrate" style="width:22px;height:22px;accent-color:var(--accent)"' + (vibratePref() ? ' checked' : '') + '></label>' : '') +
       (NATIVE ? '' : '<div class="row"><div class="grow small mute">' + h(t('webNoNotify')) + '</div></div>') +
       '<button type="button" class="row" data-act="go" data-v="me/password"><div class="grow"><b>' + h(t('changePassword')) + '</b></div>' + icon('chev', 'chev') + '</button>' +
-      '<button type="button" class="row" data-act="sign-out"><div class="grow"><b style="color:var(--bad)">' + h(t('signOut')) + '</b><div class="small mute">' + h(state.conn.n || '') + (state.session ? ' · ' + h(state.session.login || '') : '') + '</div></div></button></div>' +
+      '<button type="button" class="row" data-act="sign-out"><div class="grow"><b style="color:var(--bad)">' + h(t('signOut')) + '</b><div class="small mute">' + h(state.conn.n || brand().name || '') + (state.session ? ' · ' + h(state.session.login || '') : '') + '</div></div></button></div>' +
       byKopano() + '<p class="tiny mute" style="text-align:center;margin-top:2px">' + h(t('appVersion', { v: VERSION })) + '</p>';
     return html;
   }
